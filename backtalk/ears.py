@@ -1,5 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
+# Modified 2026-11 by Ethan: align_words (Whisper word timing for captions).
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -25,8 +26,11 @@ an utterance opens after ~120ms of sustained speech, closes after
 `silence_ms` of trailing quiet. A `gate` callable can suppress
 listening (so the open mic ignores the speakers unless barge-in is on).
 """
+import difflib
+import io
 import platform
 import re
+import string
 import sys
 import threading
 
@@ -339,6 +343,119 @@ def transcribe(pcm: np.ndarray) -> str:
         segments, _ = model.transcribe(audio, temperature=0.0, language=lang)
         text = "".join(s.text for s in segments).strip()
     return _NONSPEECH.sub("", text).strip()
+
+
+def align_words(wav_bytes: bytes, text: str) -> list | None:
+    """Real per-word TIMESTAMPS for TTS output (captions), reusing the same
+    Whisper model already loaded for the microphone: no new dependency, no
+    second model in memory. Used for Voicebox audio, which comes back with
+    no timing of its own.
+
+    Only the TIMING comes from Whisper. Each word's text is taken from
+    `text`, the exact string sent to synthesis, because Whisper mishears
+    TTS audio often enough ("all arise" for "all right") that trusting its
+    transcription would put words on screen nobody said.
+
+    When the word counts differ (Whisper merged, split, or dropped a word;
+    a contraction is enough), the two token lists are diffed with difflib
+    and every word that still lines up keeps its real timing; only the
+    unmatched stretches are interpolated between real anchors (see
+    _fill_gaps). Unmatched first/last words anchor to where Whisper heard
+    speech start and end. Gives up (returns None) only when the two lists
+    are too different to trust at all.
+
+    The WAV bytes go to faster-whisper as a file-like object, so its own
+    decoder handles resampling from whatever rate the engine rendered at.
+
+    Returns None (never raises) on any failure, including the mlx (Apple
+    GPU) backend, which isn't wired up here, so the caller falls back to
+    the length-based estimate instead of the caption going dark."""
+    if _backend != "faster-whisper":
+        return None
+    try:
+        model = warm()
+        segments, _ = model.transcribe(io.BytesIO(wav_bytes), word_timestamps=True,
+                                        language="en", vad_filter=False)
+        whisper_words = []
+        timings = []
+        for seg in segments:
+            for w in (seg.words or []):
+                token = w.word.strip()
+                if token:
+                    whisper_words.append(token)
+                    timings.append((round(w.start, 3), round(w.end, 3)))
+        real_words = text.split()
+        if not timings or not real_words:
+            return None
+
+        if len(whisper_words) == len(real_words):
+            # Common case: same shape, pair positionally.
+            return [{"word": word, "start": start, "end": end}
+                    for word, (start, end) in zip(real_words, timings)]
+
+        norm_whisper = [_norm_token(w) for w in whisper_words]
+        norm_real = [_norm_token(w) for w in real_words]
+        matcher = difflib.SequenceMatcher(None, norm_whisper, norm_real, autojunk=False)
+        if matcher.ratio() < 0.5:
+            return None  # too different to trust: fall back to the estimate
+
+        result: list[dict | None] = [None] * len(real_words)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                for k in range(i2 - i1):
+                    start, end = timings[i1 + k]
+                    result[j1 + k] = {"word": real_words[j1 + k], "start": start, "end": end}
+
+        # An unmatched FIRST or LAST word must not throw away every real
+        # timing in the sentence: anchor it to where Whisper heard speech
+        # begin and end instead. (Measured: "Alright" heard as "All right"
+        # used to drop a 33s clip that otherwise matched at 0.99 to the
+        # length estimate, which ran up to 0.8s off the audio.)
+        return _fill_gaps(result, real_words,
+                          speech_start=timings[0][0],
+                          speech_end=max(end for _, end in timings))
+    except Exception as e:
+        log(f"[ears] word-alignment failed ({str(e)[:60]}), "
+            "falling back to the length-based caption estimate")
+        return None
+
+
+def _norm_token(word: str) -> str:
+    """Strip punctuation/case so Whisper's version of a word ("Don't,")
+    diffs equal to the real text's ("don't")."""
+    return word.strip(string.punctuation + "\u2018\u2019\u201c\u201d").lower()
+
+
+def _fill_gaps(result: list, real_words: list[str],
+               speech_start: float = 0.0,
+               speech_end: float | None = None) -> list[dict]:
+    """`result` has a real {word, start, end} at every index difflib
+    matched and None where it didn't. Spread each gap evenly between the
+    real timings on either side: still a guess for those words, but
+    bounded by measured timing instead of free-running across the whole
+    sentence. A gap at the very start anchors on `speech_start`, one at
+    the very end on `speech_end`."""
+    if speech_end is None:
+        speech_end = max((r["end"] for r in result if r is not None),
+                         default=speech_start)
+    i = 0
+    while i < len(result):
+        if result[i] is not None:
+            i += 1
+            continue
+        j = i
+        while j < len(result) and result[j] is None:
+            j += 1
+        prev_end = result[i - 1]["end"] if i > 0 else speech_start
+        next_start = result[j]["start"] if j < len(result) else speech_end
+        span = max(next_start - prev_end, 0.01)
+        step = span / (j - i + 1)
+        for k in range(i, j):
+            start = prev_end + step * (k - i)
+            result[k] = {"word": real_words[k], "start": round(start, 3),
+                         "end": round(start + step, 3)}
+        i = j
+    return result
 
 
 class Ears:

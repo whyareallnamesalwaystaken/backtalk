@@ -1,5 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
+# Modified 2026-11 by Ethan: voicebox and terminal_captions settings.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -121,6 +122,14 @@ DEFAULTS = {
     # frequently on a stream or a shared screen. Nothing is collected at
     # all while this is false. (Community fix, ai-visualizer issue #1.)
     "show_usage": False,
+    # Live word highlighting in THIS console while a reply plays: a line
+    # under the printed reply lights the word audible right now (see
+    # caption_tty.py). Purely additive (the printed reply is never
+    # touched) and self-erasing (the live line clears when each chunk
+    # finishes, so nothing doubles up in scrollback). The same timing is
+    # always published on the signal bus as .voice_caption, whether this
+    # is on or off. Set false to turn the console line off.
+    "terminal_captions": True,
     # Reasoning effort for the voice session: "" inherits the model's
     # default; "low" / "medium" / "high" / "max" applies at launch.
     # Saying "set effort to X" in a voice session saves itself here.
@@ -155,6 +164,32 @@ DEFAULTS = {
     #
     # NOT "stt_device" below, which is the Whisper COMPUTE device.
     "mic_device": "",
+    # Your own local voice clone via Voicebox
+    # (github.com/jamiepine/voicebox): free, no subscription, runs on
+    # your own hardware. When enabled this is the PRIMARY voice, tried
+    # before ElevenLabs and Kokoro. Needs the Voicebox server reachable
+    # at base_url: either the Voicebox desktop app left running, or its
+    # backend from a source checkout (which mouth.py auto-launches if it
+    # is down, see _try_autostart_voicebox). On ANY failure (server
+    # unreachable, profile missing, timeout) this falls through to
+    # ElevenLabs, then Kokoro. Degrade, never mute.
+    "voicebox": {
+        "enabled": False,
+        "base_url": "http://127.0.0.1:17493",
+        # The exact profile name as it appears in the Voicebox app.
+        "profile": "",
+        # Which Voicebox engine renders. chatterbox_turbo is the speed
+        # pick for live conversation (a few seconds per sentence on a
+        # decent GPU); qwen (1.7B) sounds great but is roughly 5-6x
+        # slower, too slow for back-and-forth.
+        "engine": "chatterbox_turbo",
+        # Local rendering has no network round trip but is not instant;
+        # give it real headroom before falling back.
+        "timeout": 45.0,
+        # Only for auto-launching a downed backend from source. ""
+        # assumes a `voicebox` checkout next to this repo.
+        "repo_dir": "",
+    },
     # Optional premium voice: ElevenLabs on YOUR key. The key NEVER
     # goes in a file: it's read from the macOS Keychain (item
     # `backtalk-elevenlabs`) or Linux secret-tool, with the

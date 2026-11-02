@@ -48,11 +48,21 @@ Windows is the newest lane, and the setup runs through the wizard instead of the
 
 ## The voice
 
-Two engines, and the setup wizard offers you both instead of quietly defaulting.
+Two engines, and the setup wizard offers you both instead of quietly defaulting. A third, your own cloned voice through Voicebox, is a manual opt-in.
 
 **Built-in (Kokoro), the free one.** Local, offline, no accounts, no per-word costs, and honestly a bit computer-sounding. The default voice is `bm_lewis`, a British male with exactly the butler register. Around 60 voices ship free; set `voice` in `backtalk.json` (the first letter picks the language: `a` is American, `b` is British, and there are Spanish, French, Hindi, Italian, Japanese, Portuguese, and Chinese voices too).
 
 **ElevenLabs, the natural one.** The human-sounding voice most people actually want, on your own API key. The free tier is enough to audition it; day-to-day talking runs on the paid starter plan. The wizard walks the whole thing with you: account, key into the keychain, then an audition of real voices through backtalk's own mouth until one fits. Want the exact voice from my videos? It's called **Tarquin** in the ElevenLabs voice library: search it by name and you're done hunting. Under the hood it is: set `elevenlabs.enabled` and your `voice_id` in the config, and have `ffmpeg` installed. **The key never goes in a file.** On macOS, seed it into the Keychain once with `security add-generic-password -a "$USER" -s backtalk-elevenlabs -T /usr/bin/security -w` (it prompts for the secret) and backtalk reads it from there. Linux: `secret-tool store --label backtalk service backtalk-elevenlabs`. The `ELEVENLABS_API_KEY` environment variable works as a last resort, but an export in a shell profile is a plaintext key on disk; the keychain is the grown-up path. Kokoro stays wired in as the automatic fallback, so if the cloud fails the voice degrades instead of going mute, and `logs/backtalk.log` records why.
+
+**Voicebox, your own voice clone.** A voice cloned from a short sample of your choosing, rendered locally by [Voicebox](https://github.com/jamiepine/voicebox) on your own GPU: free, private, no per-word costs. When it's enabled it is the primary voice, with ElevenLabs (if set up) and then Kokoro as automatic fallbacks, so it still degrades instead of going mute. Set it up in `backtalk.json`:
+
+```json
+"voicebox": { "enabled": true, "profile": "My Voice" }
+```
+
+`profile` is the profile name exactly as it appears in the Voicebox app. Voicebox must be reachable at `base_url` (default `http://127.0.0.1:17493`): either leave the Voicebox desktop app running, or run its backend from a source checkout, which backtalk will launch for you if it finds it down (it looks for a `voicebox` folder next to this one; point `repo_dir` elsewhere). `engine` defaults to `chatterbox_turbo`, the fast pick for conversation; heavier engines sound great but are too slow for back-and-forth. Voicebox renders a whole chunk before sending it, so backtalk hides that wait: the first clause of a reply is split off so you hear something in about a second, and the next two chunks render in the background while the current one plays. Only clone a voice you have the right to use.
+
+**Live captions.** While a reply plays, the line under it in this console lights up each word as it's spoken (`terminal_captions`, on by default). The timing is real, not a guess: ElevenLabs supplies it, and Voicebox or Kokoro audio is timed by running the Whisper model backtalk already loaded for your mic over the rendered clip. The same timing is published as `.voice_caption` on the signal bus for any face to use.
 
 ## Give it a face (optional)
 
@@ -97,6 +107,6 @@ Free to use, and always will be. If this helped you out, you can buy me a coffee
 
 ## License
 
-Copyright (c) 2026 Jared Rhodenizer.
+Copyright (c) 2026 Jared Rhodenizer. Voicebox engine and live captions added 2026-11 by Ethan, under the same license.
 
 Licensed under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later). **Use it in your business, commercially, for free.** Run it, change it, build your workflow on top of it, and charge for the work you do with it. The one rule is that it stays open: if you hand it to someone else, or run a modified version as a service other people use, your version ships under this same license with its source available. Credit me when you build on it. Want it inside a closed-source commercial product? Email license@jaredrhod.com. Full terms are in the LICENSE file and at https://www.gnu.org/licenses/agpl-3.0.html

@@ -46,6 +46,15 @@ That sound is the safety net working: on any ElevenLabs failure, backtalk falls 
 3. **`ffmpeg` missing.** Run `ffmpeg -version`; if that fails, install it (`brew install ffmpeg` / `apt install ffmpeg` / `winget install Gyan.FFmpeg`).
 4. **No internet.** The built-in voice covers you until it's back; nothing to fix in backtalk.
 
+## The cloned voice dropped to a fallback (Voicebox users)
+
+Same safety net as ElevenLabs: on any Voicebox failure the line is spoken by the next engine instead of going silent. Look for `voicebox failed` in `logs/backtalk.log`. Most common first:
+
+1. **The Voicebox server isn't running.** backtalk launches it only from a source checkout it can find (`repo_dir`, default a `voicebox` folder next to this one, with its backend venv set up). Desktop-app users: keep the Voicebox app open. Check with `curl http://127.0.0.1:17493/profiles`.
+2. **Profile name doesn't match.** `voicebox.profile` must be the name exactly as the Voicebox app shows it; the log says `profile ... not found`.
+3. **Timeouts on long replies.** A slow GPU or a heavy engine can exceed `voicebox.timeout` (45 s). Use `chatterbox_turbo`, or raise the timeout.
+4. **Long pause before the first word after a restart.** The model loads on the first render after Voicebox starts; that one is slow, the rest are not.
+
 ## Hands-free listening: the tradeoff
 
 Hands-free listening (the setup question, `"mic_mode": "open"`, the spoken "go hands free", or the `--open-mic` launch flag) listens continuously with voice-activity detection instead of hold-to-talk. Know what you're trading: any speech in the room (a video, music with vocals, another voice assistant) can be transcribed and answered as if it were you. Push to talk is the default because the button is a perfect voice-activity detector and the mic is *closed* the rest of the time. Two things stay true in hands-free: the talk key still works (it interrupts, and holding it always gets you heard over room noise), and spoken permission checks accept only an exact "yes", so stray room audio cannot approve an action. With open speakers, answer permission checks with the button held, or wear headphones. `--barge-in` (interrupting it by talking over it) additionally requires headphones, or it hears its own reply and interrupts itself.

@@ -1,5 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
+# Modified 2026-11 by Ethan: Voicebox warm-up and caption task wiring.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -61,12 +62,12 @@ import sys
 import threading
 import time
 
-from backtalk import signals
+from backtalk import caption_tty, signals
 from backtalk.brain import WarmBrain
 from backtalk.config import CFG
 from backtalk.ears import (Ears, explain_audio_failure, record_held,
                            warm as warm_ears)
-from backtalk.mouth import Mouth
+from backtalk.mouth import Mouth, ensure_voicebox_warm
 from backtalk.ptt import PTTListener
 from backtalk.vlog import log
 
@@ -664,6 +665,13 @@ async def amain():
 
     mouth = Mouth()
     ears = Ears()
+    caption_stop = asyncio.Event()
+    caption_task = (asyncio.create_task(caption_tty.run(mouth, caption_stop))
+                    if CFG.get("terminal_captions", True) else None)
+    # Wake Voicebox before the greeting, so the first line of the session
+    # doesn't gamble on a cold backend and fall back for just that line.
+    # A no-op when Voicebox isn't enabled; capped so it can't hang startup.
+    await asyncio.get_event_loop().run_in_executor(None, ensure_voicebox_warm)
     brain = WarmBrain(model=model,
                       can_use_tool=make_permission_gate(mouth),
                       resume_id=resume_id)
@@ -1055,6 +1063,9 @@ async def amain():
         _MIC["gen"] += 1     # abort any live open-mic capture promptly
         if speak_task and not speak_task.done():
             speak_task.cancel()
+        caption_stop.set()
+        if caption_task and not caption_task.done():
+            caption_task.cancel()
         mouth.shutdown()  # restores the music on Ctrl-C / crash paths too
         signals.static_stop()
         signals.set_state("idle")

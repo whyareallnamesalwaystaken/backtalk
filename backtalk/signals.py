@@ -1,5 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
+# Modified 2026-11 by Ethan: caption() signal-bus file.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -25,6 +26,11 @@ is the whole integration surface:
   .voice_loading_pid  exists while the thinking sound is playing
   .voice_rate_limits  JSON {window: {utilization, resets_at}} — only
                       written when show_usage is on
+  .voice_caption      JSON {ts, text, words: [{word, start, end}]}: the
+                      chunk currently audible, published (and possibly
+                      republished once alignment fully lands) the moment
+                      its audio starts. A watcher lights up whichever
+                      word's start/end window contains (now - ts).
 
 Written to signals_dir (default: the repo root). Visualizers built on
 this contract just work.
@@ -53,6 +59,7 @@ _LOADING_PID_FILE = os.path.join(_DIR, ".voice_loading_pid")
 _DIRECTION_FILE = os.path.join(_DIR, ".voice_direction")
 _REPLY_DONE_FILE = os.path.join(_DIR, ".voice_reply_done")
 _RATE_LIMIT_FILE = os.path.join(_DIR, ".voice_rate_limits")
+_CAPTION_FILE = os.path.join(_DIR, ".voice_caption")
 
 _BH = CFG.get("barehands_state_dir") or ""
 _BH_STATE = os.path.join(_BH, "state") if _BH else ""
@@ -126,6 +133,27 @@ def direction(items):
     try:
         with open(_DIRECTION_FILE, "w") as f:
             f.write(json.dumps({"ts": time.time(), "directions": list(items)}))
+    except OSError:
+        pass
+
+
+def caption(text: str, ts: float, words: list):
+    """The words of the chunk audible right now, keyed to WHEN its audio
+    actually started (ts), not when this is called. A long chunk may be
+    published twice: once with whatever alignment had landed when playback
+    started, and again once it is complete. Both carry the SAME ts, so a
+    watcher's (now - ts) math never jumps when the fuller list replaces
+    the first.
+
+    Kokoro has no real per-word timing, so its words are a proportional
+    estimate by word length: useful to follow along, not frame-accurate.
+
+    Never raises."""
+    if not words:
+        return
+    try:
+        with open(_CAPTION_FILE, "w") as f:
+            f.write(json.dumps({"ts": ts, "text": text, "words": words}))
     except OSError:
         pass
 

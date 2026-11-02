@@ -1,5 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
+# Modified 2026-11 by Ethan: console hooks for caption_tty.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -60,13 +61,36 @@ def _init_console():
 
 _init_console()
 
+# Bumped on every console write this module makes. caption_tty's live
+# redraw does cursor-relative ANSI math assuming nothing else touched the
+# console between its frames; it polls this counter each frame and
+# re-anchors whenever it changes, instead of smearing over the wrong row.
+generation = 0
+
+# Set by caption_tty (while it runs) to a zero-arg function that erases its
+# ephemeral caption line. log() calls it right before printing, so a plain
+# log line never lands on top of stale highlight text.
+_pre_write_hook = None
+
+
+def set_pre_write_hook(fn):
+    global _pre_write_hook
+    _pre_write_hook = fn
+
 
 def log(line: str):
+    global generation
+    if _pre_write_hook is not None:
+        try:
+            _pre_write_hook()
+        except Exception:
+            pass  # a broken hook must never take a log line down
     try:
         print(line, flush=True)
     except UnicodeEncodeError:
         # Last resort if the console refused UTF-8: readable beats fatal.
         print(line.encode("ascii", "replace").decode("ascii"), flush=True)
+    generation += 1
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         # encoding pinned on purpose. The default is the platform's, which
