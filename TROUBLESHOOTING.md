@@ -55,6 +55,10 @@ Same safety net as ElevenLabs: on any Voicebox failure the line is spoken by the
 3. **Timeouts on long replies.** A slow GPU or a heavy engine can exceed `voicebox.timeout` (45 s). Use `chatterbox_turbo`, or raise the timeout.
 4. **Long pause before the first word after a restart.** The model loads on the first render after Voicebox starts; that one is slow, the rest are not.
 
+## A word comes out wrong once in a while (Voicebox users)
+
+Chatterbox Turbo occasionally mispronounces a single word for no code-level reason. Confirmed by testing the same word, same sentence position, same surrounding punctuation, back to back: one render came out right, another came out wrong, with the only difference being the engine's own sampling. This is not a backtalk bug, not tied to the lead-in split or chunking, and there's no config fix — it's the tradeoff of the fast engine over a slower, more consistent one. If it happens constantly rather than rarely, that's a different problem; check the text actually being sent (`logs/backtalk.log`) before assuming it's this.
+
 ## Hands-free listening: the tradeoff
 
 Hands-free listening (the setup question, `"mic_mode": "open"`, the spoken "go hands free", or the `--open-mic` launch flag) listens continuously with voice-activity detection instead of hold-to-talk. Know what you're trading: any speech in the room (a video, music with vocals, another voice assistant) can be transcribed and answered as if it were you. Push to talk is the default because the button is a perfect voice-activity detector and the mic is *closed* the rest of the time. Two things stay true in hands-free: the talk key still works (it interrupts, and holding it always gets you heard over room noise), and spoken permission checks accept only an exact "yes", so stray room audio cannot approve an action. With open speakers, answer permission checks with the button held, or wear headphones. `--barge-in` (interrupting it by talking over it) additionally requires headphones, or it hears its own reply and interrupts itself.

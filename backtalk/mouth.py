@@ -1,6 +1,6 @@
 # backtalk: talk to your Claude Code agent out loud.
 # Copyright (C) 2026 Jared Rhodenizer
-# Modified 2026-11 by Ethan: Voicebox engine, lead-in split, prefetch, GPU lock, captions.
+# Modified 2026-11 by Ethan: Voicebox engine, lead-in split, prefetch, GPU lock, captions, inter-chunk pause.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published
@@ -1011,6 +1011,11 @@ class Mouth:
             # gen is fully drained, so words is complete: one final publish
             # in case the tail grew after the last republish.
             _republish_if_grown()
+            if not self._stop.is_set():
+                # A deliberate breath between this chunk and whatever plays
+                # next -- without it, back-to-back chunks run sample into
+                # sample with zero gap, which reads as rushed/run-on.
+                out.write(np.zeros(int(rate * 0.18), dtype=np.int16))
         except Exception:
             self._drop_out()
             raise
